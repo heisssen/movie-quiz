@@ -59,6 +59,11 @@
             opacity: 0; transition: opacity 0.5s;
         }
         .rank-badge.visible { opacity: 1; }
+        
+        .diversity-info {
+            font-size: 0.7em; margin-top: 5px; opacity: 0.7;
+            display: none; /* Показуємо тільки в endless mode */
+        }
 
         /* Mode Switcher */
         .mode-container { pointer-events: auto; background: rgba(0,0,0,0.5); border-radius: 30px; padding: 4px; display: flex; gap: 5px; }
@@ -170,6 +175,14 @@
         .winner::after { background: rgba(46, 213, 115, 0.7); }
         .loser::after { background: rgba(255, 71, 87, 0.7); }
 
+        .error-message {
+            background: rgba(255, 71, 87, 0.9);
+            padding: 20px;
+            border-radius: 15px;
+            margin: 20px;
+            max-width: 500px;
+        }
+
         @media (max-width: 768px) {
             .game-container { flex-direction: column; }
             .rating-val { font-size: 3em; }
@@ -189,6 +202,7 @@
             <div class="score-display">
                 <div class="score-box" id="score">0</div>
                 <div class="rank-badge" id="rankBadge">NOVICE</div>
+                <div class="diversity-info" id="diversityInfo">Pool: 0 movies</div>
             </div>
             <div style="width:80px"></div>
         </div>
@@ -206,7 +220,7 @@
             <div class="card-bg" id="bgLeft"></div>
             <div class="card-content">
                 <div class="movie-title" id="titleLeft">...</div>
-                <div class="movie-year" id="yearLeft">....</div>
+                <div class="movie-year blur-text" id="yearLeft">....</div>
                 <div class="rating-val" id="valLeft">?</div>
             </div>
         </div>
@@ -259,9 +273,10 @@
     </div>
 
     <script>
+        // Використовуйте ваш власний API ключ з https://www.themoviedb.org/settings/api
         const API_KEY = 'd7397b9320954b044b1b8d22041d6bab';
         
-        // Seeded RNG
+        // Seeded RNG для daily mode
         function mulberry32(a) {
             return function() {
                 var t = a += 0x6D2B79F5;
@@ -280,12 +295,34 @@
             leftItem: null,
             rightItem: null,
             locked: false,
-            rng: Math.random
+            rng: Math.random,
+            fetchAttempts: 0,
+            maxFetchAttempts: 50,
+            dailyMovies: [], // Для зберігання фільмів daily mode
+            usedMovieIds: new Set(), // Відстеження використаних фільмів
+            moviePool: [] // Пул завантажених фільмів для endless mode
         };
+
+        // Різні категорії та епохи для різноманітності
+        const MOVIE_CATEGORIES = [
+            { endpoint: 'popular', weight: 3 },
+            { endpoint: 'top_rated', weight: 3 },
+            { endpoint: 'now_playing', weight: 2 },
+            { endpoint: 'upcoming', weight: 1 }
+        ];
+
+        const YEAR_RANGES = [
+            { start: 2020, end: 2025, weight: 3 },
+            { start: 2010, end: 2019, weight: 3 },
+            { start: 2000, end: 2009, weight: 2 },
+            { start: 1990, end: 1999, weight: 2 },
+            { start: 1980, end: 1989, weight: 1 },
+            { start: 1970, end: 1979, weight: 1 }
+        ];
 
         function getTodaySeed() {
             const date = new Date();
-            return parseInt(`${date.getFullYear()}${date.getMonth()+1}${date.getDate()}`);
+            return parseInt(`${date.getFullYear()}${String(date.getMonth()+1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`);
         }
 
         function setMode(mode) {
@@ -304,6 +341,11 @@
             state.round = 0;
             state.dailyResults = [];
             state.lifelines = { '5050': true, 'skip': true, 'year': true };
+            state.fetchAttempts = 0;
+            state.dailyMovies = [];
+            state.usedMovieIds = new Set(); // Очищаємо використані фільми
+            state.moviePool = [];
+            
             updateLifelinesUI();
             updateScoreUI();
             
@@ -314,26 +356,266 @@
 
             if(state.mode === 'daily') {
                 state.rng = mulberry32(getTodaySeed());
+                try {
+                    await loadDailyMovies();
+                } catch (error) {
+                    showError('Failed to load daily challenge. Please try again.');
+                    return;
+                }
             } else {
                 state.rng = Math.random;
+                try {
+                    // Завантажуємо пул фільмів для endless mode
+                    txt.innerText = 'Loading Movie Collection...';
+                    state.moviePool = await loadMoviePool();
+                    if (state.moviePool.length < 20) {
+                        throw new Error('Not enough movies in pool');
+                    }
+                } catch (error) {
+                    console.error('Error loading pool:', error);
+                    showError('Failed to load movie collection. Please try again.');
+                    return;
+                }
             }
 
-            await loadRound(true);
-            overlay.classList.add('hidden');
+            try {
+                await loadRound(true);
+                overlay.classList.add('hidden');
+            } catch (error) {
+                showError('Failed to load movies. Please check your internet connection and try again.');
+            }
+        }
+
+        // Вибір категорії на основі ваги
+        function selectWeightedCategory(categories) {
+            const totalWeight = categories.reduce((sum, cat) => sum + cat.weight, 0);
+            let random = state.rng() * totalWeight;
+            
+            for (const cat of categories) {
+                random -= cat.weight;
+                if (random <= 0) return cat;
+            }
+            return categories[0];
         }
 
         async function fetchMovie() {
             try {
-                const page = Math.floor(state.rng() * 50) + 1;
-                const res = await fetch(`https://api.themoviedb.org/3/movie/popular?api_key=${API_KEY}&language=en-US&page=${page}`);
+                // Вибираємо випадкову категорію
+                const category = selectWeightedCategory(MOVIE_CATEGORIES);
+                const yearRange = selectWeightedCategory(YEAR_RANGES);
+                
+                const page = Math.floor(state.rng() * 20) + 1;
+                
+                // Додаємо фільтри по рокам для більшої різноманітності
+                const params = new URLSearchParams({
+                    api_key: API_KEY,
+                    language: 'en-US',
+                    page: page.toString(),
+                    'vote_count.gte': '100'
+                });
+                
+                // Для деяких категорій додаємо фільтри по рокам
+                if (category.endpoint === 'discover') {
+                    params.append('primary_release_date.gte', `${yearRange.start}-01-01`);
+                    params.append('primary_release_date.lte', `${yearRange.end}-12-31`);
+                    params.append('sort_by', 'vote_average.desc');
+                }
+                
+                const endpoint = category.endpoint === 'discover' ? 
+                    'discover/movie' : `movie/${category.endpoint}`;
+                
+                const res = await fetch(`https://api.themoviedb.org/3/${endpoint}?${params}`);
+                
+                if (!res.ok) {
+                    throw new Error(`API error: ${res.status}`);
+                }
+                
                 const data = await res.json();
                 
-                const candidates = data.results.sort(() => 0.5 - state.rng());
-                const valid = candidates.find(m => m.vote_count > 500 && m.backdrop_path && m.vote_average > 0);
+                if (!data.results || data.results.length === 0) {
+                    throw new Error('No movies found');
+                }
                 
-                if (!valid) return fetchMovie();
+                // Шафлимо результати
+                const candidates = data.results.sort(() => 0.5 - state.rng());
+                
+                // Шукаємо валідний фільм, який ще не використовувався
+                const valid = candidates.find(m => 
+                    m.vote_count > 100 && 
+                    m.backdrop_path && 
+                    m.poster_path &&
+                    m.vote_average > 0 &&
+                    m.release_date &&
+                    !state.usedMovieIds.has(m.id) // Перевірка на повторення
+                );
+                
+                if (!valid) {
+                    if (state.fetchAttempts < state.maxFetchAttempts) {
+                        state.fetchAttempts++;
+                        return fetchMovie();
+                    }
+                    throw new Error('Could not find valid movie after multiple attempts');
+                }
+                
                 return valid;
-            } catch (e) { return null; }
+            } catch (error) {
+                console.error('Error fetching movie:', error);
+                if (state.fetchAttempts < state.maxFetchAttempts) {
+                    state.fetchAttempts++;
+                    return fetchMovie();
+                }
+                throw error;
+            }
+        }
+
+        // Завантаження пулу фільмів для endless mode
+        async function loadMoviePool() {
+            const pool = [];
+            const categories = ['popular', 'top_rated', 'now_playing'];
+            
+            // Завантажуємо по 2 сторінки з кожної категорії
+            for (const category of categories) {
+                for (let page = 1; page <= 2; page++) {
+                    try {
+                        const res = await fetch(
+                            `https://api.themoviedb.org/3/movie/${category}?api_key=${API_KEY}&language=en-US&page=${page}`
+                        );
+                        if (res.ok) {
+                            const data = await res.json();
+                            const valid = data.results.filter(m => 
+                                m.vote_count > 100 && 
+                                m.backdrop_path && 
+                                m.poster_path &&
+                                m.vote_average > 0 &&
+                                m.release_date
+                            );
+                            pool.push(...valid);
+                        }
+                    } catch (error) {
+                        console.error('Error loading pool:', error);
+                    }
+                }
+            }
+            
+            // Додаємо фільми з різних десятиліть
+            const decades = [
+                { year: '2020-01-01', endYear: '2024-12-31' },
+                { year: '2010-01-01', endYear: '2019-12-31' },
+                { year: '2000-01-01', endYear: '2009-12-31' },
+                { year: '1990-01-01', endYear: '1999-12-31' }
+            ];
+            
+            for (const decade of decades) {
+                try {
+                    const res = await fetch(
+                        `https://api.themoviedb.org/3/discover/movie?api_key=${API_KEY}&language=en-US&sort_by=vote_average.desc&vote_count.gte=100&primary_release_date.gte=${decade.year}&primary_release_date.lte=${decade.endYear}&page=1`
+                    );
+                    if (res.ok) {
+                        const data = await res.json();
+                        const valid = data.results.filter(m => 
+                            m.backdrop_path && m.poster_path && m.vote_average > 0
+                        );
+                        pool.push(...valid.slice(0, 10)); // Беремо топ-10 з кожного десятиліття
+                    }
+                } catch (error) {
+                    console.error('Error loading decade:', error);
+                }
+            }
+            
+            // Перемішуємо пул
+            return pool.sort(() => 0.5 - state.rng());
+        }
+
+        // Завантаження фільмів для daily mode - однакові для всіх користувачів
+        async function loadDailyMovies() {
+            state.dailyMovies = [];
+            const tempRng = mulberry32(getTodaySeed());
+            
+            const allMovies = [];
+            const categories = ['popular', 'top_rated', 'now_playing'];
+            
+            // Завантажуємо з різних категорій
+            for (const category of categories) {
+                const page = Math.floor(tempRng() * 10) + 1;
+                try {
+                    const res = await fetch(
+                        `https://api.themoviedb.org/3/movie/${category}?api_key=${API_KEY}&language=en-US&page=${page}`
+                    );
+                    if (res.ok) {
+                        const data = await res.json();
+                        const valid = data.results.filter(m => 
+                            m.vote_count > 100 && 
+                            m.backdrop_path && 
+                            m.poster_path &&
+                            m.vote_average > 0 &&
+                            m.release_date
+                        );
+                        allMovies.push(...valid);
+                    }
+                } catch (error) {
+                    console.error('Error loading category:', category, error);
+                }
+            }
+            
+            // Додаємо фільми з різних десятиліть для різноманітності
+            const decades = [
+                { start: 2015, end: 2024 },
+                { start: 2005, end: 2014 },
+                { start: 1995, end: 2004 },
+                { start: 1985, end: 1994 }
+            ];
+            
+            for (const decade of decades) {
+                try {
+                    const res = await fetch(
+                        `https://api.themoviedb.org/3/discover/movie?api_key=${API_KEY}&language=en-US&sort_by=vote_average.desc&vote_count.gte=100&primary_release_date.gte=${decade.start}-01-01&primary_release_date.lte=${decade.end}-12-31&page=1`
+                    );
+                    if (res.ok) {
+                        const data = await res.json();
+                        const valid = data.results.filter(m => 
+                            m.backdrop_path && m.poster_path && m.vote_average > 0 && m.release_date
+                        );
+                        allMovies.push(...valid);
+                    }
+                } catch (error) {
+                    console.error('Error loading decade:', decade, error);
+                }
+            }
+            
+            if (allMovies.length < 30) {
+                throw new Error('Not enough movies loaded for daily mode');
+            }
+            
+            // Перемішуємо з seeded RNG
+            for (let i = allMovies.length - 1; i > 0; i--) {
+                const j = Math.floor(tempRng() * (i + 1));
+                [allMovies[i], allMovies[j]] = [allMovies[j], allMovies[i]];
+            }
+            
+            // Вибираємо 20 унікальних фільмів, уникаючи нічиїх
+            const selected = [];
+            const usedIds = new Set();
+            const usedRatings = new Set();
+            
+            for (const movie of allMovies) {
+                if (selected.length >= 20) break;
+                
+                const rating = parseFloat(movie.vote_average.toFixed(1));
+                
+                // Перевірка на унікальність ID та рейтингу
+                if (!usedIds.has(movie.id) && !usedRatings.has(rating)) {
+                    selected.push(movie);
+                    usedIds.add(movie.id);
+                    usedRatings.add(rating);
+                }
+            }
+            
+            if (selected.length < 20) {
+                throw new Error('Could not find enough unique movies for daily challenge');
+            }
+            
+            state.dailyMovies = selected;
+            return selected;
         }
 
         // --- DRAW PROTECTION LOGIC ---
@@ -343,12 +625,13 @@
 
         function isSameValue(item1, item2) {
             if (!item1 || !item2) return false;
-            // Strict comparison of DISPLAYED values to prevent draws
+            // Строге порівняння відображуваних значень для запобігання нічиїм
             return getVal(item1) === getVal(item2);
         }
 
         async function loadRound(isFirst) {
             state.locked = true;
+            state.fetchAttempts = 0;
             resetCardStyles();
             
             if (state.mode === 'daily' && state.round >= 10) {
@@ -356,45 +639,119 @@
                 return;
             }
 
-            if (isFirst || state.mode === 'daily') {
-                let m1 = await fetchMovie();
-                let m2 = await fetchMovie();
-                
-                // Draw Protection & Duplication Protection
-                while (!m1 || !m2 || m1.id === m2.id || isSameValue(m1, m2)) {
-                    m2 = await fetchMovie();
-                    if(!m1) m1 = await fetchMovie();
+            try {
+                if (state.mode === 'daily') {
+                    // Використовуємо передзавантажені фільми
+                    const idx = state.round * 2;
+                    if (idx + 1 >= state.dailyMovies.length) {
+                        throw new Error('Not enough movies for daily challenge');
+                    }
+                    state.leftItem = state.dailyMovies[idx];
+                    state.rightItem = state.dailyMovies[idx + 1];
+                    
+                    // Додаємо до використаних
+                    state.usedMovieIds.add(state.leftItem.id);
+                    state.usedMovieIds.add(state.rightItem.id);
+                } else {
+                    // Endless mode
+                    if (isFirst) {
+                        // Перший раунд - вибираємо 2 фільми з пулу
+                        let m1 = getRandomMovieFromPool();
+                        let m2 = getRandomMovieFromPool();
+                        
+                        let attempts = 0;
+                        while ((!m1 || !m2 || m1.id === m2.id || isSameValue(m1, m2)) && attempts < 20) {
+                            m2 = getRandomMovieFromPool();
+                            if(!m1) m1 = getRandomMovieFromPool();
+                            attempts++;
+                        }
+                        
+                        if (attempts >= 20) {
+                            throw new Error('Could not find suitable movie pair');
+                        }
+                        
+                        state.leftItem = m1;
+                        state.rightItem = m2;
+                        state.usedMovieIds.add(m1.id);
+                        state.usedMovieIds.add(m2.id);
+                    } else {
+                        // Наступні раунди - лівий фільм залишається
+                        let m2 = getRandomMovieFromPool();
+                        let attempts = 0;
+                        
+                        while ((!m2 || m2.id === state.leftItem.id || isSameValue(state.leftItem, m2)) && attempts < 20) {
+                            m2 = getRandomMovieFromPool();
+                            attempts++;
+                        }
+                        
+                        if (attempts >= 20) {
+                            // Якщо пул вичерпався, завантажуємо новий
+                            console.log('Pool exhausted, reloading...');
+                            state.usedMovieIds = new Set([state.leftItem.id]); // Залишаємо тільки лівий фільм
+                            state.moviePool = await loadMoviePool();
+                            m2 = getRandomMovieFromPool();
+                            
+                            if (!m2 || m2.id === state.leftItem.id || isSameValue(state.leftItem, m2)) {
+                                throw new Error('Could not find suitable movie');
+                            }
+                        }
+                        
+                        state.rightItem = m2;
+                        state.usedMovieIds.add(m2.id);
+                    }
                 }
-                state.leftItem = m1;
-                state.rightItem = m2;
-            } else {
-                let m2 = await fetchMovie();
-                while (!m2 || m2.id === state.leftItem.id || isSameValue(state.leftItem, m2)) {
-                    m2 = await fetchMovie();
-                }
-                state.rightItem = m2;
-            }
 
-            renderCards();
-            state.locked = false;
+                renderCards();
+                state.locked = false;
+            } catch (error) {
+                console.error('Error in loadRound:', error);
+                showError('Failed to load movies. Click "Play Again" to retry.');
+                document.getElementById('btnRestart').style.display = 'inline-block';
+            }
+        }
+
+        // Отримати випадковий фільм з пулу, який ще не використовувався
+        function getRandomMovieFromPool() {
+            if (state.moviePool.length === 0) return null;
+            
+            // Фільтруємо використані фільми
+            const available = state.moviePool.filter(m => !state.usedMovieIds.has(m.id));
+            
+            if (available.length === 0) {
+                // Якщо всі фільми використані, скидаємо (крім поточного лівого)
+                const currentLeftId = state.leftItem ? state.leftItem.id : null;
+                state.usedMovieIds = new Set(currentLeftId ? [currentLeftId] : []);
+                return state.moviePool[Math.floor(state.rng() * state.moviePool.length)];
+            }
+            
+            // Вибираємо випадковий з доступних
+            return available[Math.floor(state.rng() * available.length)];
         }
 
         function renderCards() {
             updateCard('Left', state.leftItem);
             updateCard('Right', state.rightItem);
             document.getElementById('rangeHint').style.display = 'none';
+            // Блюримо обидві дати
+            document.getElementById('yearLeft').classList.add('blur-text');
             document.getElementById('yearRight').classList.add('blur-text');
         }
 
         function updateCard(side, item) {
-            document.getElementById(`bg${side}`).style.backgroundImage = `url('https://image.tmdb.org/t/p/original${item.backdrop_path}')`;
+            const bgUrl = item.backdrop_path ? 
+                `url('https://image.tmdb.org/t/p/original${item.backdrop_path}')` :
+                `url('https://via.placeholder.com/1920x1080/1e272e/ffffff?text=${encodeURIComponent(item.title)}')`;
+            
+            document.getElementById(`bg${side}`).style.backgroundImage = bgUrl;
             
             const title = document.getElementById(`title${side}`);
-            title.innerText = item.title;
+            title.innerText = item.title || 'Unknown Title';
             title.classList.remove('visible');
-            void title.offsetWidth; setTimeout(() => title.classList.add('visible'), 50);
+            void title.offsetWidth; 
+            setTimeout(() => title.classList.add('visible'), 50);
 
-            document.getElementById(`year${side}`).innerText = (item.release_date||'').split('-')[0];
+            const year = (item.release_date || '').split('-')[0] || 'Unknown';
+            document.getElementById(`year${side}`).innerText = year;
             
             const showRating = (state.mode === 'endless' && state.score > 0 && side === 'Left');
             document.getElementById(`val${side}`).innerText = showRating ? item.vote_average.toFixed(1) : '?';
@@ -407,19 +764,27 @@
             const lVal = getVal(state.leftItem);
             const rVal = getVal(state.rightItem);
             
-            // Should be no draws now, but >= handles it just in case
+            // Визначаємо переможця (>=  обробляє рідкісні випадки нічиїх)
             const userWon = (side === 'left' && lVal >= rVal) || (side === 'right' && rVal >= lVal);
 
             document.getElementById('valLeft').innerText = lVal.toFixed(1);
             document.getElementById('valRight').innerText = rVal.toFixed(1);
+            // Розблюрюємо обидві дати
+            document.getElementById('yearLeft').classList.remove('blur-text');
             document.getElementById('yearRight').classList.remove('blur-text');
 
             const lCard = document.getElementById('cardLeft');
             const rCard = document.getElementById('cardRight');
 
             setTimeout(() => {
-                if (lVal >= rVal) { lCard.classList.add('winner'); rCard.classList.add('loser'); } 
-                else { rCard.classList.add('winner'); lCard.classList.add('loser'); }
+                // Показуємо переможця
+                if (lVal >= rVal) { 
+                    lCard.classList.add('winner'); 
+                    rCard.classList.add('loser'); 
+                } else { 
+                    rCard.classList.add('winner'); 
+                    lCard.classList.add('loser'); 
+                }
 
                 if (userWon) {
                     state.score++;
@@ -428,6 +793,7 @@
                     addToGallery(lVal >= rVal ? state.leftItem : state.rightItem);
                     
                     if(state.mode === 'endless') {
+                        // В endless mode переможець стає лівою карткою
                         if (rVal > lVal) state.leftItem = state.rightItem;
                         setTimeout(() => loadRound(false), 2000);
                     } else {
@@ -449,7 +815,7 @@
 
         function useLifeline(type) {
             if (state.locked || !state.lifelines[type]) return;
-            const btn = document.getElementById(type === '5050' ? 'btn5050' : type === 'skip' ? 'btnSkip' : 'btnYear');
+            
             state.lifelines[type] = false;
             updateLifelinesUI();
 
@@ -461,8 +827,18 @@
                 document.getElementById('rangeHint').style.display = 'block';
             } else if (type === 'skip') {
                 state.locked = true;
-                setTimeout(() => loadRound(state.mode === 'daily'), 500);
+                
+                if (state.mode === 'daily') {
+                    // В daily mode пропускаємо поточний раунд
+                    state.round++;
+                    setTimeout(() => loadRound(false), 500);
+                } else {
+                    // В endless mode просто завантажуємо новий раунд
+                    setTimeout(() => loadRound(true), 500);
+                }
             } else if (type === 'year') {
+                // Розблюрюємо обидві дати
+                document.getElementById('yearLeft').classList.remove('blur-text');
                 document.getElementById('yearRight').classList.remove('blur-text');
             }
         }
@@ -476,19 +852,44 @@
         function updateScoreUI() {
             document.getElementById('score').innerText = state.score;
             const badge = document.getElementById('rankBadge');
-            let rank = "NOVICE"; let color = "#bdc3c7";
+            let rank = "NOVICE"; 
+            let color = "#bdc3c7";
+            
             if (state.score >= 5) { rank = "FANBOY"; color = "#3498db"; }
             if (state.score >= 10) { rank = "CRITIC"; color = "#9b59b6"; }
             if (state.score >= 20) { rank = "DIRECTOR"; color = "#e67e22"; }
             if (state.score >= 50) { rank = "TARANTINO"; color = "#e74c3c"; }
-            badge.innerText = rank; badge.style.background = color; badge.style.boxShadow = `0 0 10px ${color}`; badge.classList.add('visible');
+            
+            badge.innerText = rank; 
+            badge.style.background = color; 
+            badge.style.boxShadow = `0 0 10px ${color}`; 
+            badge.classList.add('visible');
+            
+            // Оновлюємо інфо про різноманітність в endless mode
+            const diversityInfo = document.getElementById('diversityInfo');
+            if (state.mode === 'endless' && state.moviePool.length > 0) {
+                const available = state.moviePool.filter(m => !state.usedMovieIds.has(m.id)).length;
+                diversityInfo.innerText = `🎬 ${available}/${state.moviePool.length} fresh`;
+                diversityInfo.style.display = 'block';
+            } else {
+                diversityInfo.style.display = 'none';
+            }
         }
 
         function resetCardStyles() {
             document.getElementById('cardLeft').className = 'card';
             document.getElementById('cardRight').className = 'card';
-            document.getElementById('valLeft').innerText = (state.mode === 'endless' && state.score > 0) ? state.leftItem.vote_average.toFixed(1) : '?';
+            
+            const leftVal = (state.mode === 'endless' && state.score > 0 && state.leftItem) ? 
+                state.leftItem.vote_average.toFixed(1) : '?';
+            document.getElementById('valLeft').innerText = leftVal;
             document.getElementById('valRight').innerText = '?';
+            
+            // Повертаємо blur на дати (якщо year lifeline не використано)
+            if (state.lifelines['year']) {
+                document.getElementById('yearLeft').classList.add('blur-text');
+                document.getElementById('yearRight').classList.add('blur-text');
+            }
         }
 
         function endDailyGame() {
@@ -496,12 +897,15 @@
             const shareBox = document.getElementById('shareSection');
             const grid = document.getElementById('shareGrid');
             const txt = document.getElementById('overlayText');
+            
             txt.innerText = 'DAILY CHALLENGE COMPLETE';
+            
             let gridStr = '';
             state.dailyResults.forEach((res, i) => {
                 gridStr += res === 'win' ? '🟩' : '🟥';
                 if (i === 4) gridStr += '\n';
             });
+            
             grid.innerText = gridStr;
             shareBox.style.display = 'block';
             overlay.classList.remove('hidden');
@@ -510,12 +914,21 @@
         function shareResult() {
             const date = new Date().toISOString().split('T')[0];
             const squares = document.getElementById('shareGrid').innerText;
-            const text = `🎬 Movie Battle Daily ${date}\nScore: ${state.score}/10\n\n${squares}\n\nPlay here: bit.ly/cinebattle`;
-            navigator.clipboard.writeText(text).then(() => {
-                const fb = document.getElementById('shareFeedback');
-                fb.innerText = 'COPIED TO CLIPBOARD!';
-                setTimeout(() => fb.innerText = '', 2000);
-            });
+            const text = `🎬 Movie Battle Daily ${date}\nScore: ${state.score}/10\n\n${squares}\n\nPlay CineBattle!`;
+            
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(() => {
+                    const fb = document.getElementById('shareFeedback');
+                    fb.innerText = 'COPIED TO CLIPBOARD!';
+                    setTimeout(() => fb.innerText = '', 2000);
+                }).catch(err => {
+                    console.error('Failed to copy:', err);
+                    alert('Could not copy to clipboard. Please copy manually:\n\n' + text);
+                });
+            } else {
+                // Fallback для старих браузерів
+                alert('Copy this text:\n\n' + text);
+            }
         }
 
         function gameOver() {
@@ -525,39 +938,74 @@
             overlay.classList.remove('hidden');
         }
 
+        function showError(message) {
+            const overlay = document.getElementById('overlay');
+            const txt = document.getElementById('overlayText');
+            txt.innerHTML = `<div class="error-message">❌ ${message}</div>`;
+            document.getElementById('btnRestart').style.display = 'inline-block';
+            overlay.classList.remove('hidden');
+        }
+
         function addToGallery(movie) {
-            let gallery = JSON.parse(localStorage.getItem('cineGallery')) || [];
-            if (!gallery.find(m => m.id === movie.id)) {
-                gallery.unshift({ id: movie.id, poster: movie.poster_path, title: movie.title });
-                if (gallery.length > 50) gallery.pop();
-                localStorage.setItem('cineGallery', JSON.stringify(gallery));
+            try {
+                let gallery = JSON.parse(localStorage.getItem('cineGallery')) || [];
+                if (!gallery.find(m => m.id === movie.id)) {
+                    gallery.unshift({ 
+                        id: movie.id, 
+                        poster: movie.poster_path, 
+                        title: movie.title 
+                    });
+                    if (gallery.length > 50) gallery.pop();
+                    localStorage.setItem('cineGallery', JSON.stringify(gallery));
+                }
+            } catch (error) {
+                console.error('Error saving to gallery:', error);
             }
         }
 
         function toggleGallery() {
             const modal = document.getElementById('galleryModal');
             const grid = document.getElementById('galleryGrid');
+            
             if (modal.style.display === 'flex') {
                 modal.style.display = 'none';
             } else {
-                const gallery = JSON.parse(localStorage.getItem('cineGallery')) || [];
-                grid.innerHTML = gallery.map(m => `
-                    <div class="gallery-item" title="${m.title}">
-                        <img src="https://image.tmdb.org/t/p/w200${m.poster}" loading="lazy">
-                    </div>
-                `).join('');
-                modal.style.display = 'flex';
+                try {
+                    const gallery = JSON.parse(localStorage.getItem('cineGallery')) || [];
+                    if (gallery.length === 0) {
+                        grid.innerHTML = '<p style="grid-column: 1/-1; text-align:center; padding:40px;">No movies yet. Win some battles to fill your gallery!</p>';
+                    } else {
+                        grid.innerHTML = gallery.map(m => `
+                            <div class="gallery-item" title="${m.title}">
+                                <img src="https://image.tmdb.org/t/p/w200${m.poster}" 
+                                     alt="${m.title}"
+                                     loading="lazy"
+                                     onerror="this.src='https://via.placeholder.com/200x300/1e272e/ffffff?text=No+Image'">
+                            </div>
+                        `).join('');
+                    }
+                    modal.style.display = 'flex';
+                } catch (error) {
+                    console.error('Error loading gallery:', error);
+                    grid.innerHTML = '<p style="grid-column: 1/-1; text-align:center;">Error loading gallery</p>';
+                }
             }
         }
 
+        // Parallax ефект для фону
         document.addEventListener('mousemove', (e) => {
             if (window.innerWidth < 768) return;
             const x = (window.innerWidth - e.pageX * 2) / 100;
             const y = (window.innerHeight - e.pageY * 2) / 100;
-            document.getElementById('bgLeft').style.transform = `scale(1.1) translate(${x}px, ${y}px)`;
-            document.getElementById('bgRight').style.transform = `scale(1.1) translate(${-x}px, ${-y}px)`;
+            
+            const bgLeft = document.getElementById('bgLeft');
+            const bgRight = document.getElementById('bgRight');
+            
+            if (bgLeft) bgLeft.style.transform = `scale(1.1) translate(${x}px, ${y}px)`;
+            if (bgRight) bgRight.style.transform = `scale(1.1) translate(${-x}px, ${-y}px)`;
         });
 
+        // Запуск гри
         window.onload = initGame;
     </script>
 </body>
