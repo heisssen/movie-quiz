@@ -3,25 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Movie Rating Battle Pro</title>
+    <title>CineBattle: No Draws</title>
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
     <style>
         :root {
             --primary: #ff4757;
             --success: #2ed573;
+            --gold: #f1c40f;
             --dark: #1e272e;
             --glass: rgba(0, 0, 0, 0.6);
-            --ui-glass: rgba(255, 255, 255, 0.1);
+            --ui-glass: rgba(255, 255, 255, 0.15);
         }
 
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            user-select: none;
-            -webkit-tap-highlight-color: transparent;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; -webkit-tap-highlight-color: transparent; }
 
         body {
             font-family: 'Montserrat', sans-serif;
@@ -33,277 +28,174 @@
             flex-direction: column;
         }
 
-        /* --- Top Bar --- */
+        /* --- UI TOP --- */
         .ui-layer {
-            position: absolute;
-            top: 20px;
-            width: 100%;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 15px;
-            z-index: 100;
-            pointer-events: none;
+            position: absolute; top: 0; left: 0; width: 100%;
+            padding: 10px;
+            display: flex; flex-direction: column; align-items: center; gap: 10px;
+            z-index: 100; pointer-events: none;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.9), transparent);
         }
 
-        .score-container {
-            display: flex;
-            gap: 15px;
-            pointer-events: auto;
+        .top-row { display: flex; justify-content: space-between; width: 100%; padding: 0 20px; pointer-events: auto; }
+        
+        .gallery-btn {
+            background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+            color: white; padding: 8px 15px; border-radius: 20px; cursor: pointer; font-weight: bold;
+            display: flex; align-items: center; gap: 5px; font-size: 0.9em;
         }
+        .gallery-btn:hover { background: rgba(255,255,255,0.2); }
 
-        .stat-box {
-            background: var(--ui-glass);
-            backdrop-filter: blur(15px);
-            padding: 8px 25px;
-            border-radius: 50px;
-            border: 1px solid rgba(255,255,255,0.15);
-            font-weight: 800;
-            font-size: 1.2em;
-            box-shadow: 0 5px 20px rgba(0,0,0,0.3);
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            transition: all 0.3s;
+        /* Score & Rank */
+        .score-display { text-align: center; }
+        .score-box {
+            font-size: 2em; font-weight: 900; text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+            color: white; display: inline-block;
         }
-
-        .text-label { font-size: 0.7em; opacity: 0.7; text-transform: uppercase; font-weight: 600; margin-right: 5px; }
-        .score-val { color: var(--success); }
-        .high-val { color: #f1c40f; }
-
-        /* Fire Mode Style */
-        .on-fire {
-            border-color: #ff4757;
-            box-shadow: 0 0 20px rgba(255, 71, 87, 0.4);
-            animation: shake 0.5s infinite;
+        .rank-badge {
+            font-size: 0.8em; text-transform: uppercase; letter-spacing: 2px;
+            background: var(--primary); padding: 2px 10px; border-radius: 10px;
+            margin-top: 5px; font-weight: 700; box-shadow: 0 0 10px var(--primary);
+            opacity: 0; transition: opacity 0.5s;
         }
+        .rank-badge.visible { opacity: 1; }
 
-        .fire-icon {
-            display: none;
-            font-size: 1.2em;
-        }
-        .on-fire .fire-icon { display: block; animation: burn 0.5s infinite alternate; }
-
-        .mode-switcher {
-            display: flex;
-            background: rgba(0,0,0,0.6);
-            padding: 4px;
-            border-radius: 40px;
-            pointer-events: auto;
-            border: 1px solid rgba(255,255,255,0.1);
-        }
-
+        /* Mode Switcher */
+        .mode-container { pointer-events: auto; background: rgba(0,0,0,0.5); border-radius: 30px; padding: 4px; display: flex; gap: 5px; }
         .mode-btn {
-            background: transparent;
-            border: none;
-            color: rgba(255,255,255,0.6);
-            padding: 8px 20px;
-            border-radius: 30px;
-            font-weight: 700;
-            cursor: pointer;
-            transition: 0.3s;
-            text-transform: uppercase;
-            font-size: 0.75em;
+            background: transparent; border: none; color: #aaa; padding: 8px 20px; border-radius: 25px;
+            font-weight: 800; cursor: pointer; text-transform: uppercase; font-size: 0.8em; transition: 0.3s;
         }
+        .mode-btn.active { background: white; color: black; box-shadow: 0 0 15px rgba(255,255,255,0.3); }
+        .mode-btn.daily { color: var(--gold); }
+        .mode-btn.daily.active { background: var(--gold); color: black; box-shadow: 0 0 15px var(--gold); }
 
-        .mode-btn.active {
-            background: white;
-            color: #0f1014;
-            box-shadow: 0 0 15px rgba(255,255,255,0.2);
-        }
-
-        /* --- Game Area --- */
-        .game-container {
-            display: flex;
-            width: 100%;
-            height: 100%;
-        }
+        /* --- GAME AREA --- */
+        .game-container { display: flex; width: 100%; height: 100%; position: relative; }
 
         .card {
-            position: relative;
-            flex: 1;
-            height: 100%;
-            cursor: pointer;
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            text-align: center;
-            transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+            flex: 1; height: 100%; position: relative; cursor: pointer;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            overflow: hidden; text-align: center;
         }
 
         .card-bg {
-            position: absolute;
-            inset: 0;
-            background-size: cover;
-            background-position: center;
-            transition: transform 0.6s ease-out;
-            z-index: 0;
+            position: absolute; inset: -30px; background-size: cover; background-position: center;
+            transition: transform 0.1s; z-index: 0; filter: brightness(0.6);
         }
-
         .card::after {
-            content: '';
-            position: absolute;
-            inset: 0;
+            content: ''; position: absolute; inset: 0; z-index: 1;
             background: linear-gradient(to bottom, rgba(0,0,0,0.2), rgba(0,0,0,0.9));
-            z-index: 1;
             transition: background 0.3s;
         }
+        .card:hover .card-bg { filter: brightness(0.8); transform: scale(1.02); }
 
-        .card:hover .card-bg { transform: scale(1.05); }
-        .card:hover::after { background: linear-gradient(to bottom, rgba(0,0,0,0.1), rgba(0,0,0,0.8)); }
+        .card-content { position: relative; z-index: 10; padding: 20px; width: 90%; pointer-events: none; }
         
-        .card-content {
-            position: relative;
-            z-index: 10;
-            padding: 20px;
-            width: 85%;
-            pointer-events: none;
-        }
-
         .movie-title {
-            font-size: 2.5em;
-            font-weight: 900;
-            line-height: 1.1;
-            text-shadow: 0 5px 20px rgba(0,0,0,0.8);
-            margin-bottom: 10px;
-            opacity: 0;
-            transform: translateY(20px);
-            transition: opacity 0.5s, transform 0.5s;
+            font-size: 2.2em; font-weight: 900; text-shadow: 0 4px 20px rgba(0,0,0,1);
+            margin-bottom: 10px; opacity: 0; transform: translateY(20px); transition: 0.5s;
         }
 
         .movie-year {
-            display: inline-block;
-            font-size: 1em;
-            font-weight: 600;
-            opacity: 0.8;
-            background: rgba(255,255,255,0.15);
-            backdrop-filter: blur(5px);
-            padding: 4px 12px;
-            border-radius: 8px;
-            margin-bottom: 25px;
+            display: inline-block; padding: 5px 12px; background: rgba(255,255,255,0.15);
+            backdrop-filter: blur(5px); border-radius: 8px; font-weight: 700; margin-bottom: 20px;
+            transition: 0.3s;
         }
+        .blur-text { filter: blur(8px); background: rgba(255,255,255,0.3); user-select: none; }
 
-        .rating-container {
-            position: relative;
-            height: 100px;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-
-        .rating-value {
-            font-size: 5em;
-            font-weight: 900;
-            color: white;
-            text-shadow: 0 0 30px rgba(255,255,255,0.2);
-        }
-
-        /* VS Badge */
-        .vs-badge {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 60px;
-            height: 60px;
-            background: white;
-            color: #0f1014;
-            border-radius: 50%;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            font-weight: 900;
-            font-size: 1.2em;
-            z-index: 50;
-            box-shadow: 0 0 0 8px rgba(255,255,255,0.1);
-            pointer-events: none;
-        }
-
-        .instruction {
-            position: absolute;
-            bottom: 40px;
-            width: 100%;
-            text-align: center;
-            color: rgba(255,255,255,0.5);
-            font-size: 0.8em;
-            text-transform: uppercase;
-            letter-spacing: 3px;
-            z-index: 50;
-            pointer-events: none;
-        }
-
-        /* States */
-        .card.winner::after { background: rgba(46, 213, 115, 0.8); }
-        .card.loser::after { background: rgba(255, 71, 87, 0.8); }
+        .rating-val { font-size: 5em; font-weight: 900; color: var(--success); text-shadow: 0 0 30px rgba(0,0,0,0.5); }
         
-        .visible { opacity: 1 !important; transform: translateY(0) !important; }
-        .pulse-anim { animation: pulse-green 1s infinite; }
-
-        @keyframes pulse-green {
-            0% { box-shadow: inset 0 0 0 0 rgba(46, 213, 115, 0.7); }
-            100% { box-shadow: inset 0 0 100px 0 rgba(46, 213, 115, 0); }
+        .range-hint {
+            font-size: 1.5em; font-weight: 700; color: var(--gold);
+            background: rgba(0,0,0,0.8); padding: 10px 20px; border-radius: 10px; border: 2px solid var(--gold);
+            display: none; margin-top: 10px; animation: popIn 0.3s;
         }
-        @keyframes burn { from { transform: scale(1); opacity: 0.8; } to { transform: scale(1.2); opacity: 1; } }
 
-        /* Overlay */
+        .vs-badge {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 60px; height: 60px; background: white; color: black; border-radius: 50%;
+            display: flex; justify-content: center; align-items: center; font-weight: 900; z-index: 50;
+            pointer-events: none;
+        }
+
+        /* --- LIFELINES --- */
+        .lifelines-container {
+            position: absolute; bottom: 30px; width: 100%; display: flex; justify-content: center; gap: 15px;
+            z-index: 90; pointer-events: none;
+        }
+        .lifeline-btn {
+            pointer-events: auto; background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.3);
+            color: white; padding: 12px 20px; border-radius: 15px; cursor: pointer;
+            backdrop-filter: blur(10px); font-weight: 700; transition: 0.3s; display: flex; flex-direction: column; align-items: center;
+            min-width: 80px;
+        }
+        .lifeline-btn:hover { background: rgba(255,255,255,0.2); transform: translateY(-5px); }
+        .lifeline-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+        .lifeline-icon { font-size: 1.5em; margin-bottom: 2px; }
+        .lifeline-label { font-size: 0.7em; text-transform: uppercase; }
+
+        /* --- OVERLAYS --- */
         .overlay {
-            position: fixed;
-            inset: 0;
-            background: #0f1014;
-            z-index: 200;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
+            position: fixed; inset: 0; background: #0f1014; z-index: 200;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
             transition: opacity 0.4s;
         }
         .overlay.hidden { opacity: 0; pointer-events: none; }
-        
-        .btn-restart {
-            background: var(--success);
-            border: none;
-            padding: 15px 50px;
-            font-size: 1.2em;
-            font-weight: 800;
-            text-transform: uppercase;
-            border-radius: 50px;
-            cursor: pointer;
-            color: #0f1014;
-            margin-top: 30px;
-            transition: transform 0.2s;
-            box-shadow: 0 0 20px rgba(46, 213, 115, 0.4);
+
+        .gallery-modal {
+            position: fixed; inset: 0; background: rgba(15, 16, 20, 0.95); z-index: 150;
+            padding: 20px; display: none; flex-direction: column;
         }
-        .btn-restart:hover { transform: scale(1.05); }
+        .gallery-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .gallery-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px;
+            overflow-y: auto; padding-bottom: 50px;
+        }
+        .gallery-item { position: relative; border-radius: 8px; overflow: hidden; aspect-ratio: 2/3; }
+        .gallery-item img { width: 100%; height: 100%; object-fit: cover; }
+        .gallery-item:hover { transform: scale(1.05); transition: 0.2s; z-index: 2; box-shadow: 0 0 15px var(--success); }
+
+        .share-box {
+            background: #1e272e; padding: 30px; border-radius: 20px; text-align: center;
+            border: 1px solid rgba(255,255,255,0.1); max-width: 90%;
+        }
+        .share-grid { font-family: monospace; font-size: 1.5em; letter-spacing: 5px; margin: 20px 0; }
+        .action-btn {
+            background: var(--primary); border: none; padding: 15px 40px; border-radius: 30px;
+            color: white; font-weight: 900; cursor: pointer; margin-top: 10px; font-size: 1.1em;
+        }
+        
+        .visible { opacity: 1 !important; transform: translateY(0) !important; }
+        .winner::after { background: rgba(46, 213, 115, 0.7); }
+        .loser::after { background: rgba(255, 71, 87, 0.7); }
 
         @media (max-width: 768px) {
             .game-container { flex-direction: column; }
-            .movie-title { font-size: 1.8em; }
-            .rating-value { font-size: 3.5em; }
-            .instruction { display: none; }
-            .score-container { transform: scale(0.9); }
+            .rating-val { font-size: 3em; }
+            .movie-title { font-size: 1.5em; }
+            .lifelines-container { bottom: 10px; gap: 10px; }
+            .lifeline-btn { padding: 8px 15px; min-width: 60px; }
         }
     </style>
 </head>
 <body>
 
     <div class="ui-layer">
-        <div class="score-container">
-            <div class="stat-box" id="scoreBox">
-                <span class="text-label">Score</span>
-                <span id="score" class="score-val">0</span>
-                <span class="fire-icon">🔥</span>
+        <div class="top-row">
+            <button class="gallery-btn" onclick="toggleGallery()">
+                <span>🖼️</span> Gallery
+            </button>
+            <div class="score-display">
+                <div class="score-box" id="score">0</div>
+                <div class="rank-badge" id="rankBadge">NOVICE</div>
             </div>
-            <div class="stat-box">
-                <span class="text-label">Best</span>
-                <span id="bestScore" class="high-val">0</span>
-            </div>
+            <div style="width:80px"></div>
         </div>
-        
-        <div class="mode-switcher">
-            <button class="mode-btn active" id="btnRandom" onclick="changeMode('random')">Random</button>
-            <button class="mode-btn" id="btnKing" onclick="changeMode('king')">King of the Hill</button>
+
+        <div class="mode-container">
+            <button class="mode-btn active" id="btnEndless" onclick="setMode('endless')">Endless</button>
+            <button class="mode-btn daily" id="btnDaily" onclick="setMode('daily')">Daily 📅</button>
         </div>
     </div>
 
@@ -313,163 +205,171 @@
         <div class="card" id="cardLeft" onclick="handleChoice('left')">
             <div class="card-bg" id="bgLeft"></div>
             <div class="card-content">
-                <div class="movie-title" id="titleLeft">Loading...</div>
+                <div class="movie-title" id="titleLeft">...</div>
                 <div class="movie-year" id="yearLeft">....</div>
-                <div class="rating-container">
-                    <div class="rating-value" id="rateLeft">?</div>
-                </div>
+                <div class="rating-val" id="valLeft">?</div>
             </div>
         </div>
 
         <div class="card" id="cardRight" onclick="handleChoice('right')">
             <div class="card-bg" id="bgRight"></div>
             <div class="card-content">
-                <div class="movie-title" id="titleRight">Loading...</div>
-                <div class="movie-year" id="yearRight">....</div>
-                <div class="rating-container">
-                    <div class="rating-value" id="rateRight">?</div>
-                </div>
+                <div class="movie-title" id="titleRight">...</div>
+                <div class="movie-year blur-text" id="yearRight">....</div>
+                <div class="rating-val" id="valRight">?</div>
+                <div class="range-hint" id="rangeHint">6.5 - 7.5</div>
             </div>
         </div>
     </div>
 
-    <div class="instruction">Tap the movie with the higher rating</div>
+    <div class="lifelines-container">
+        <button class="lifeline-btn" id="btn5050" onclick="useLifeline('5050')">
+            <span class="lifeline-icon">⚖️</span>
+            <span class="lifeline-label">50/50</span>
+        </button>
+        <button class="lifeline-btn" id="btnSkip" onclick="useLifeline('skip')">
+            <span class="lifeline-icon">⏭️</span>
+            <span class="lifeline-label">Skip</span>
+        </button>
+        <button class="lifeline-btn" id="btnYear" onclick="useLifeline('year')">
+            <span class="lifeline-icon">📅</span>
+            <span class="lifeline-label">Year</span>
+        </button>
+    </div>
 
     <div class="overlay" id="overlay">
-        <h2 id="overlayText" style="font-size: 2em; text-align: center;">Loading...</h2>
-        <button class="btn-restart" id="btnRestart" onclick="initGame()" style="display:none">Play Again</button>
+        <h2 id="overlayText" style="font-size: 2em; margin-bottom:20px">Loading...</h2>
+        
+        <div id="shareSection" class="share-box" style="display:none">
+            <h3>DAILY CHALLENGE COMPLETED</h3>
+            <div class="share-grid" id="shareGrid">⬜⬜⬜⬜⬜</div>
+            <button class="action-btn" onclick="shareResult()">SHARE RESULT 📤</button>
+            <p style="margin-top:10px; font-size:0.8em; opacity:0.6" id="shareFeedback"></p>
+        </div>
+
+        <button class="action-btn" id="btnRestart" onclick="initGame()" style="display:none">PLAY AGAIN</button>
+    </div>
+
+    <div class="gallery-modal" id="galleryModal">
+        <div class="gallery-header">
+            <h2>🏆 Victory Gallery</h2>
+            <button onclick="toggleGallery()" style="background:none; border:none; color:white; font-size:1.5em; cursor:pointer">✕</button>
+        </div>
+        <div class="gallery-grid" id="galleryGrid"></div>
     </div>
 
     <script>
-        const API_KEY = 'd7397b9320954b044b1b8d22041d6bab'; // TMDB Demo Key
-
-        let state = {
-            mode: 'random',
-            score: 0,
-            bestScore: localStorage.getItem('movie_best') || 0,
-            streak: 0,
-            leftItem: null,
-            rightItem: null,
-            locked: false
-        };
-
-        document.getElementById('bestScore').innerText = state.bestScore;
-
-        // --- Audio System (Simple Beeps via AudioContext) ---
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const API_KEY = 'd7397b9320954b044b1b8d22041d6bab';
         
-        function playTone(freq, type, duration) {
-            if (audioCtx.state === 'suspended') audioCtx.resume();
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            osc.type = type;
-            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + duration);
-            osc.connect(gain);
-            gain.connect(audioCtx.destination);
-            osc.start();
-            osc.stop(audioCtx.currentTime + duration);
-        }
-
-        function playSound(type) {
-            if(type === 'win') {
-                playTone(600, 'sine', 0.1);
-                setTimeout(() => playTone(800, 'sine', 0.2), 100);
-            } else if (type === 'lose') {
-                playTone(200, 'sawtooth', 0.4);
-                setTimeout(() => playTone(150, 'sawtooth', 0.4), 200);
-            } else if (type === 'click') {
-                playTone(400, 'triangle', 0.05);
+        // Seeded RNG
+        function mulberry32(a) {
+            return function() {
+                var t = a += 0x6D2B79F5;
+                t = Math.imul(t ^ t >>> 15, t | 1);
+                t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+                return ((t ^ t >>> 14) >>> 0) / 4294967296;
             }
         }
 
-        // --- Haptics ---
-        function vibrate(pattern) {
-            if (navigator.vibrate) navigator.vibrate(pattern);
+        let state = {
+            mode: 'endless',
+            score: 0,
+            round: 0,
+            dailyResults: [],
+            lifelines: { '5050': true, 'skip': true, 'year': true },
+            leftItem: null,
+            rightItem: null,
+            locked: false,
+            rng: Math.random
+        };
+
+        function getTodaySeed() {
+            const date = new Date();
+            return parseInt(`${date.getFullYear()}${date.getMonth()+1}${date.getDate()}`);
         }
 
-        // --- Animation Utils ---
-        function animateValue(obj, start, end, duration) {
-            if (start === end) { obj.innerHTML = end.toFixed(1); return; }
-            let startTimestamp = null;
-            const step = (timestamp) => {
-                if (!startTimestamp) startTimestamp = timestamp;
-                const progress = Math.min((timestamp - startTimestamp) / duration, 1);
-                const currentVal = (progress * (end - start) + start);
-                obj.innerHTML = currentVal.toFixed(1);
-                if (progress < 1) window.requestAnimationFrame(step);
-                else obj.innerHTML = end.toFixed(1);
-            };
-            window.requestAnimationFrame(step);
-        }
-
-        // --- Logic ---
-        function changeMode(newMode) {
-            if (state.mode === newMode) return;
-            playSound('click');
-            state.mode = newMode;
-            document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active'));
-            if (newMode === 'random') document.getElementById('btnRandom').classList.add('active');
-            else document.getElementById('btnKing').classList.add('active');
+        function setMode(mode) {
+            if(state.mode === mode) return;
+            state.mode = mode;
+            document.getElementById('btnEndless').classList.toggle('active', mode === 'endless');
+            document.getElementById('btnDaily').classList.toggle('active', mode === 'daily');
             initGame();
-        }
-
-        async function fetchMovie() {
-            try {
-                const page = Math.floor(Math.random() * 50) + 1;
-                const res = await fetch(`https://api.themoviedb.org/3/movie/popular?api_key=${API_KEY}&language=en-US&page=${page}`);
-                const data = await res.json();
-                const valid = data.results.filter(m => m.vote_count > 500 && m.backdrop_path && m.vote_average > 0);
-                if (valid.length === 0) return fetchMovie();
-                return valid[Math.floor(Math.random() * valid.length)];
-            } catch (e) { return null; }
         }
 
         async function initGame() {
             const overlay = document.getElementById('overlay');
-            const btn = document.getElementById('btnRestart');
+            const txt = document.getElementById('overlayText');
             
             state.score = 0;
-            state.streak = 0;
-            updateUI();
+            state.round = 0;
+            state.dailyResults = [];
+            state.lifelines = { '5050': true, 'skip': true, 'year': true };
+            updateLifelinesUI();
+            updateScoreUI();
             
-            document.getElementById('overlayText').innerText = 'Loading Movies...';
-            btn.style.display = 'none';
+            document.getElementById('shareSection').style.display = 'none';
+            document.getElementById('btnRestart').style.display = 'none';
+            txt.innerText = 'Loading Movies...';
             overlay.classList.remove('hidden');
 
-            await loadNewRound(true);
-            
+            if(state.mode === 'daily') {
+                state.rng = mulberry32(getTodaySeed());
+            } else {
+                state.rng = Math.random;
+            }
+
+            await loadRound(true);
             overlay.classList.add('hidden');
         }
 
-        function updateUI() {
-            document.getElementById('score').innerText = state.score;
-            document.getElementById('bestScore').innerText = state.bestScore;
-            
-            // Fire Mode
-            const scoreBox = document.getElementById('scoreBox');
-            if(state.streak >= 3) scoreBox.classList.add('on-fire');
-            else scoreBox.classList.remove('on-fire');
+        async function fetchMovie() {
+            try {
+                const page = Math.floor(state.rng() * 50) + 1;
+                const res = await fetch(`https://api.themoviedb.org/3/movie/popular?api_key=${API_KEY}&language=en-US&page=${page}`);
+                const data = await res.json();
+                
+                const candidates = data.results.sort(() => 0.5 - state.rng());
+                const valid = candidates.find(m => m.vote_count > 500 && m.backdrop_path && m.vote_average > 0);
+                
+                if (!valid) return fetchMovie();
+                return valid;
+            } catch (e) { return null; }
         }
 
-        async function loadNewRound(isFirstRound = false) {
-            state.locked = true;
-            resetCardStyles('Left');
-            resetCardStyles('Right');
+        // --- DRAW PROTECTION LOGIC ---
+        function getVal(item) {
+            return item ? parseFloat(item.vote_average.toFixed(1)) : 0;
+        }
 
-            if (state.mode === 'random' || isFirstRound) {
+        function isSameValue(item1, item2) {
+            if (!item1 || !item2) return false;
+            // Strict comparison of DISPLAYED values to prevent draws
+            return getVal(item1) === getVal(item2);
+        }
+
+        async function loadRound(isFirst) {
+            state.locked = true;
+            resetCardStyles();
+            
+            if (state.mode === 'daily' && state.round >= 10) {
+                endDailyGame();
+                return;
+            }
+
+            if (isFirst || state.mode === 'daily') {
                 let m1 = await fetchMovie();
                 let m2 = await fetchMovie();
-                while (!m1 || !m2 || m1.id === m2.id) {
+                
+                // Draw Protection & Duplication Protection
+                while (!m1 || !m2 || m1.id === m2.id || isSameValue(m1, m2)) {
                     m2 = await fetchMovie();
-                    if (!m1) m1 = await fetchMovie();
+                    if(!m1) m1 = await fetchMovie();
                 }
                 state.leftItem = m1;
                 state.rightItem = m2;
             } else {
                 let m2 = await fetchMovie();
-                while (!m2 || m2.id === state.leftItem.id) {
+                while (!m2 || m2.id === state.leftItem.id || isSameValue(state.leftItem, m2)) {
                     m2 = await fetchMovie();
                 }
                 state.rightItem = m2;
@@ -480,101 +380,183 @@
         }
 
         function renderCards() {
-            const showLeft = state.mode === 'king' && state.score > 0;
-            updateCard('Left', state.leftItem, showLeft);
-            updateCard('Right', state.rightItem, false);
+            updateCard('Left', state.leftItem);
+            updateCard('Right', state.rightItem);
+            document.getElementById('rangeHint').style.display = 'none';
+            document.getElementById('yearRight').classList.add('blur-text');
         }
 
-        function updateCard(side, item, showRating) {
-            const bg = document.getElementById(`bg${side}`);
-            const title = document.getElementById(`title${side}`);
-            const year = document.getElementById(`year${side}`);
-            const rate = document.getElementById(`rate${side}`);
-
-            bg.style.backgroundImage = `url('https://image.tmdb.org/t/p/original${item.backdrop_path}')`;
-            title.innerText = item.title;
-            year.innerText = (item.release_date || 'N/A').split('-')[0];
+        function updateCard(side, item) {
+            document.getElementById(`bg${side}`).style.backgroundImage = `url('https://image.tmdb.org/t/p/original${item.backdrop_path}')`;
             
+            const title = document.getElementById(`title${side}`);
+            title.innerText = item.title;
             title.classList.remove('visible');
-            void title.offsetWidth; 
-            setTimeout(() => title.classList.add('visible'), 50);
+            void title.offsetWidth; setTimeout(() => title.classList.add('visible'), 50);
 
-            if (showRating) rate.innerText = item.vote_average.toFixed(1);
-            else rate.innerText = '?';
+            document.getElementById(`year${side}`).innerText = (item.release_date||'').split('-')[0];
+            
+            const showRating = (state.mode === 'endless' && state.score > 0 && side === 'Left');
+            document.getElementById(`val${side}`).innerText = showRating ? item.vote_average.toFixed(1) : '?';
         }
 
-        function resetCardStyles(side) {
-            const card = document.getElementById(`card${side}`);
-            card.className = 'card';
-        }
-
-        function handleChoice(choice) {
+        function handleChoice(side) {
             if (state.locked) return;
             state.locked = true;
 
-            const leftRate = state.leftItem.vote_average;
-            const rightRate = state.rightItem.vote_average;
-            const leftStart = (state.mode === 'king' && state.score > 0) ? leftRate : 0;
+            const lVal = getVal(state.leftItem);
+            const rVal = getVal(state.rightItem);
             
-            animateValue(document.getElementById('rateLeft'), leftStart, leftRate, 800);
-            animateValue(document.getElementById('rateRight'), 0, rightRate, 800);
+            // Should be no draws now, but >= handles it just in case
+            const userWon = (side === 'left' && lVal >= rVal) || (side === 'right' && rVal >= lVal);
 
-            const userWon = (choice === 'left' && leftRate >= rightRate) || 
-                            (choice === 'right' && rightRate >= leftRate);
+            document.getElementById('valLeft').innerText = lVal.toFixed(1);
+            document.getElementById('valRight').innerText = rVal.toFixed(1);
+            document.getElementById('yearRight').classList.remove('blur-text');
 
-            const leftCard = document.getElementById('cardLeft');
-            const rightCard = document.getElementById('cardRight');
+            const lCard = document.getElementById('cardLeft');
+            const rCard = document.getElementById('cardRight');
 
             setTimeout(() => {
-                if (leftRate >= rightRate) {
-                    leftCard.classList.add('winner');
-                    rightCard.classList.add('loser');
-                } else {
-                    rightCard.classList.add('winner');
-                    leftCard.classList.add('loser');
-                }
+                if (lVal >= rVal) { lCard.classList.add('winner'); rCard.classList.add('loser'); } 
+                else { rCard.classList.add('winner'); lCard.classList.add('loser'); }
 
                 if (userWon) {
                     state.score++;
-                    state.streak++;
-                    playSound('win');
-                    vibrate(50); // Short vibe
-                    updateUI();
+                    state.dailyResults.push('win');
+                    confetti({ particleCount: 50, spread: 60, origin: { y: 0.7 } });
+                    addToGallery(lVal >= rVal ? state.leftItem : state.rightItem);
                     
-                    document.getElementById(`card${choice === 'left' ? 'Left' : 'Right'}`).classList.add('pulse-anim');
-
-                    if (state.mode === 'king') {
-                        if (rightRate > leftRate) state.leftItem = state.rightItem;
+                    if(state.mode === 'endless') {
+                        if (rVal > lVal) state.leftItem = state.rightItem;
+                        setTimeout(() => loadRound(false), 2000);
+                    } else {
+                        state.round++;
+                        setTimeout(() => loadRound(false), 2000);
                     }
-                    setTimeout(() => loadNewRound(false), 2000);
                 } else {
-                    playSound('lose');
-                    vibrate([100, 50, 100]); // Long vibe
-                    setTimeout(gameOver, 1500);
+                    state.dailyResults.push('lose');
+                    if(state.mode === 'endless') {
+                        setTimeout(gameOver, 2000);
+                    } else {
+                        state.round++;
+                        setTimeout(() => loadRound(false), 2000);
+                    }
                 }
-            }, 600);
+                updateScoreUI();
+            }, 500);
+        }
+
+        function useLifeline(type) {
+            if (state.locked || !state.lifelines[type]) return;
+            const btn = document.getElementById(type === '5050' ? 'btn5050' : type === 'skip' ? 'btnSkip' : 'btnYear');
+            state.lifelines[type] = false;
+            updateLifelinesUI();
+
+            if (type === '5050') {
+                const rVal = state.rightItem.vote_average;
+                const min = Math.max(0, rVal - 0.5);
+                const max = Math.min(10, rVal + 0.5);
+                document.getElementById('rangeHint').innerText = `${min.toFixed(1)} - ${max.toFixed(1)}`;
+                document.getElementById('rangeHint').style.display = 'block';
+            } else if (type === 'skip') {
+                state.locked = true;
+                setTimeout(() => loadRound(state.mode === 'daily'), 500);
+            } else if (type === 'year') {
+                document.getElementById('yearRight').classList.remove('blur-text');
+            }
+        }
+
+        function updateLifelinesUI() {
+            document.getElementById('btn5050').disabled = !state.lifelines['5050'];
+            document.getElementById('btnSkip').disabled = !state.lifelines['skip'];
+            document.getElementById('btnYear').disabled = !state.lifelines['year'];
+        }
+
+        function updateScoreUI() {
+            document.getElementById('score').innerText = state.score;
+            const badge = document.getElementById('rankBadge');
+            let rank = "NOVICE"; let color = "#bdc3c7";
+            if (state.score >= 5) { rank = "FANBOY"; color = "#3498db"; }
+            if (state.score >= 10) { rank = "CRITIC"; color = "#9b59b6"; }
+            if (state.score >= 20) { rank = "DIRECTOR"; color = "#e67e22"; }
+            if (state.score >= 50) { rank = "TARANTINO"; color = "#e74c3c"; }
+            badge.innerText = rank; badge.style.background = color; badge.style.boxShadow = `0 0 10px ${color}`; badge.classList.add('visible');
+        }
+
+        function resetCardStyles() {
+            document.getElementById('cardLeft').className = 'card';
+            document.getElementById('cardRight').className = 'card';
+            document.getElementById('valLeft').innerText = (state.mode === 'endless' && state.score > 0) ? state.leftItem.vote_average.toFixed(1) : '?';
+            document.getElementById('valRight').innerText = '?';
+        }
+
+        function endDailyGame() {
+            const overlay = document.getElementById('overlay');
+            const shareBox = document.getElementById('shareSection');
+            const grid = document.getElementById('shareGrid');
+            const txt = document.getElementById('overlayText');
+            txt.innerText = 'DAILY CHALLENGE COMPLETE';
+            let gridStr = '';
+            state.dailyResults.forEach((res, i) => {
+                gridStr += res === 'win' ? '🟩' : '🟥';
+                if (i === 4) gridStr += '\n';
+            });
+            grid.innerText = gridStr;
+            shareBox.style.display = 'block';
+            overlay.classList.remove('hidden');
+        }
+
+        function shareResult() {
+            const date = new Date().toISOString().split('T')[0];
+            const squares = document.getElementById('shareGrid').innerText;
+            const text = `🎬 Movie Battle Daily ${date}\nScore: ${state.score}/10\n\n${squares}\n\nPlay here: bit.ly/cinebattle`;
+            navigator.clipboard.writeText(text).then(() => {
+                const fb = document.getElementById('shareFeedback');
+                fb.innerText = 'COPIED TO CLIPBOARD!';
+                setTimeout(() => fb.innerText = '', 2000);
+            });
         }
 
         function gameOver() {
             const overlay = document.getElementById('overlay');
-            const txt = document.getElementById('overlayText');
-            const btn = document.getElementById('btnRestart');
-            
-            // High Score Check
-            let msg = `GAME OVER<br><span style="font-size:0.6em">Score: ${state.score}</span>`;
-            
-            if (state.score > state.bestScore) {
-                state.bestScore = state.score;
-                localStorage.setItem('movie_best', state.bestScore);
-                msg = `🏆 NEW RECORD!<br><span style="font-size:0.6em">Score: ${state.score}</span>`;
-                confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
-                playSound('win');
-            }
-
-            txt.innerHTML = msg;
-            btn.style.display = 'inline-block';
+            document.getElementById('overlayText').innerHTML = `GAME OVER<br>Score: ${state.score}`;
+            document.getElementById('btnRestart').style.display = 'inline-block';
             overlay.classList.remove('hidden');
         }
+
+        function addToGallery(movie) {
+            let gallery = JSON.parse(localStorage.getItem('cineGallery')) || [];
+            if (!gallery.find(m => m.id === movie.id)) {
+                gallery.unshift({ id: movie.id, poster: movie.poster_path, title: movie.title });
+                if (gallery.length > 50) gallery.pop();
+                localStorage.setItem('cineGallery', JSON.stringify(gallery));
+            }
+        }
+
+        function toggleGallery() {
+            const modal = document.getElementById('galleryModal');
+            const grid = document.getElementById('galleryGrid');
+            if (modal.style.display === 'flex') {
+                modal.style.display = 'none';
+            } else {
+                const gallery = JSON.parse(localStorage.getItem('cineGallery')) || [];
+                grid.innerHTML = gallery.map(m => `
+                    <div class="gallery-item" title="${m.title}">
+                        <img src="https://image.tmdb.org/t/p/w200${m.poster}" loading="lazy">
+                    </div>
+                `).join('');
+                modal.style.display = 'flex';
+            }
+        }
+
+        document.addEventListener('mousemove', (e) => {
+            if (window.innerWidth < 768) return;
+            const x = (window.innerWidth - e.pageX * 2) / 100;
+            const y = (window.innerHeight - e.pageY * 2) / 100;
+            document.getElementById('bgLeft').style.transform = `scale(1.1) translate(${x}px, ${y}px)`;
+            document.getElementById('bgRight').style.transform = `scale(1.1) translate(${-x}px, ${-y}px)`;
+        });
 
         window.onload = initGame;
     </script>
