@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Movie Rating Battle Pro</title>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <style>
+        :root {
+            --primary: #ff4757;
+            --success: #2ed573;
+            --dark: #1e272e;
+            --glass: rgba(0, 0, 0, 0.6);
+            --ui-glass: rgba(255, 255, 255, 0.1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: 'Montserrat', sans-serif;
+            background-color: #0f1014;
+            color: white;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* --- Top Bar --- */
+        .ui-layer {
+            position: absolute;
+            top: 20px;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+            z-index: 100;
+            pointer-events: none;
+        }
+
+        .score-container {
+            display: flex;
+            gap: 15px;
+            pointer-events: auto;
+        }
+
+        .stat-box {
+            background: var(--ui-glass);
+            backdrop-filter: blur(15px);
+            padding: 8px 25px;
+            border-radius: 50px;
+            border: 1px solid rgba(255,255,255,0.15);
+            font-weight: 800;
+            font-size: 1.2em;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.3s;
+        }
+
+        .text-label { font-size: 0.7em; opacity: 0.7; text-transform: uppercase; font-weight: 600; margin-right: 5px; }
+        .score-val { color: var(--success); }
+        .high-val { color: #f1c40f; }
+
+        /* Fire Mode Style */
+        .on-fire {
+            border-color: #ff4757;
+            box-shadow: 0 0 20px rgba(255, 71, 87, 0.4);
+            animation: shake 0.5s infinite;
+        }
+
+        .fire-icon {
+            display: none;
+            font-size: 1.2em;
+        }
+        .on-fire .fire-icon { display: block; animation: burn 0.5s infinite alternate; }
+
+        .mode-switcher {
+            display: flex;
+            background: rgba(0,0,0,0.6);
+            padding: 4px;
+            border-radius: 40px;
+            pointer-events: auto;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .mode-btn {
+            background: transparent;
+            border: none;
+            color: rgba(255,255,255,0.6);
+            padding: 8px 20px;
+            border-radius: 30px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: 0.3s;
+            text-transform: uppercase;
+            font-size: 0.75em;
+        }
+
+        .mode-btn.active {
+            background: white;
+            color: #0f1014;
+            box-shadow: 0 0 15px rgba(255,255,255,0.2);
+        }
+
+        /* --- Game Area --- */
+        .game-container {
+            display: flex;
+            width: 100%;
+            height: 100%;
+        }
+
+        .card {
+            position: relative;
+            flex: 1;
+            height: 100%;
+            cursor: pointer;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
+
+        .card-bg {
+            position: absolute;
+            inset: 0;
+            background-size: cover;
+            background-position: center;
+            transition: transform 0.6s ease-out;
+            z-index: 0;
+        }
+
+        .card::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.2), rgba(0,0,0,0.9));
+            z-index: 1;
+            transition: background 0.3s;
+        }
+
+        .card:hover .card-bg { transform: scale(1.05); }
+        .card:hover::after { background: linear-gradient(to bottom, rgba(0,0,0,0.1), rgba(0,0,0,0.8)); }
+        
+        .card-content {
+            position: relative;
+            z-index: 10;
+            padding: 20px;
+            width: 85%;
+            pointer-events: none;
+        }
+
+        .movie-title {
+            font-size: 2.5em;
+            font-weight: 900;
+            line-height: 1.1;
+            text-shadow: 0 5px 20px rgba(0,0,0,0.8);
+            margin-bottom: 10px;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: opacity 0.5s, transform 0.5s;
+        }
+
+        .movie-year {
+            display: inline-block;
+            font-size: 1em;
+            font-weight: 600;
+            opacity: 0.8;
+            background: rgba(255,255,255,0.15);
+            backdrop-filter: blur(5px);
+            padding: 4px 12px;
+            border-radius: 8px;
+            margin-bottom: 25px;
+        }
+
+        .rating-container {
+            position: relative;
+            height: 100px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .rating-value {
+            font-size: 5em;
+            font-weight: 900;
+            color: white;
+            text-shadow: 0 0 30px rgba(255,255,255,0.2);
+        }
+
+        /* VS Badge */
+        .vs-badge {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 60px;
+            height: 60px;
+            background: white;
+            color: #0f1014;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-weight: 900;
+            font-size: 1.2em;
+            z-index: 50;
+            box-shadow: 0 0 0 8px rgba(255,255,255,0.1);
+            pointer-events: none;
+        }
+
+        .instruction {
+            position: absolute;
+            bottom: 40px;
+            width: 100%;
+            text-align: center;
+            color: rgba(255,255,255,0.5);
+            font-size: 0.8em;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            z-index: 50;
+            pointer-events: none;
+        }
+
+        /* States */
+        .card.winner::after { background: rgba(46, 213, 115, 0.8); }
+        .card.loser::after { background: rgba(255, 71, 87, 0.8); }
+        
+        .visible { opacity: 1 !important; transform: translateY(0) !important; }
+        .pulse-anim { animation: pulse-green 1s infinite; }
+
+        @keyframes pulse-green {
+            0% { box-shadow: inset 0 0 0 0 rgba(46, 213, 115, 0.7); }
+            100% { box-shadow: inset 0 0 100px 0 rgba(46, 213, 115, 0); }
+        }
+        @keyframes burn { from { transform: scale(1); opacity: 0.8; } to { transform: scale(1.2); opacity: 1; } }
+
+        /* Overlay */
+        .overlay {
+            position: fixed;
+            inset: 0;
+            background: #0f1014;
+            z-index: 200;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            transition: opacity 0.4s;
+        }
+        .overlay.hidden { opacity: 0; pointer-events: none; }
+        
+        .btn-restart {
+            background: var(--success);
+            border: none;
+            padding: 15px 50px;
+            font-size: 1.2em;
+            font-weight: 800;
+            text-transform: uppercase;
+            border-radius: 50px;
+            cursor: pointer;
+            color: #0f1014;
+            margin-top: 30px;
+            transition: transform 0.2s;
+            box-shadow: 0 0 20px rgba(46, 213, 115, 0.4);
+        }
+        .btn-restart:hover { transform: scale(1.05); }
+
+        @media (max-width: 768px) {
+            .game-container { flex-direction: column; }
+            .movie-title { font-size: 1.8em; }
+            .rating-value { font-size: 3.5em; }
+            .instruction { display: none; }
+            .score-container { transform: scale(0.9); }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="ui-layer">
+        <div class="score-container">
+            <div class="stat-box" id="scoreBox">
+                <span class="text-label">Score</span>
+                <span id="score" class="score-val">0</span>
+                <span class="fire-icon">🔥</span>
+            </div>
+            <div class="stat-box">
+                <span class="text-label">Best</span>
+                <span id="bestScore" class="high-val">0</span>
+            </div>
+        </div>
+        
+        <div class="mode-switcher">
+            <button class="mode-btn active" id="btnRandom" onclick="changeMode('random')">Random</button>
+            <button class="mode-btn" id="btnKing" onclick="changeMode('king')">King of the Hill</button>
+        </div>
+    </div>
+
+    <div class="game-container">
+        <div class="vs-badge">VS</div>
+
+        <div class="card" id="cardLeft" onclick="handleChoice('left')">
+            <div class="card-bg" id="bgLeft"></div>
+            <div class="card-content">
+                <div class="movie-title" id="titleLeft">Loading...</div>
+                <div class="movie-year" id="yearLeft">....</div>
+                <div class="rating-container">
+                    <div class="rating-value" id="rateLeft">?</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card" id="cardRight" onclick="handleChoice('right')">
+            <div class="card-bg" id="bgRight"></div>
+            <div class="card-content">
+                <div class="movie-title" id="titleRight">Loading...</div>
+                <div class="movie-year" id="yearRight">....</div>
+                <div class="rating-container">
+                    <div class="rating-value" id="rateRight">?</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="instruction">Tap the movie with the higher rating</div>
+
+    <div class="overlay" id="overlay">
+        <h2 id="overlayText" style="font-size: 2em; text-align: center;">Loading...</h2>
+        <button class="btn-restart" id="btnRestart" onclick="initGame()" style="display:none">Play Again</button>
+    </div>
+
+    <script>
+        const API_KEY = 'd7397b9320954b044b1b8d22041d6bab'; // TMDB Demo Key
+
+        let state = {
+            mode: 'random',
+            score: 0,
+            bestScore: localStorage.getItem('movie_best') || 0,
+            streak: 0,
+            leftItem: null,
+            rightItem: null,
+            locked: false
+        };
+
+        document.getElementById('bestScore').innerText = state.bestScore;
+
+        // --- Audio System (Simple Beeps via AudioContext) ---
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        function playTone(freq, type, duration) {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + duration);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + duration);
+        }
+
+        function playSound(type) {
+            if(type === 'win') {
+                playTone(600, 'sine', 0.1);
+                setTimeout(() => playTone(800, 'sine', 0.2), 100);
+            } else if (type === 'lose') {
+                playTone(200, 'sawtooth', 0.4);
+                setTimeout(() => playTone(150, 'sawtooth', 0.4), 200);
+            } else if (type === 'click') {
+                playTone(400, 'triangle', 0.05);
+            }
+        }
+
+        // --- Haptics ---
+        function vibrate(pattern) {
+            if (navigator.vibrate) navigator.vibrate(pattern);
+        }
+
+        // --- Animation Utils ---
+        function animateValue(obj, start, end, duration) {
+            if (start === end) { obj.innerHTML = end.toFixed(1); return; }
+            let startTimestamp = null;
+            const step = (timestamp) => {
+                if (!startTimestamp) startTimestamp = timestamp;
+                const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+                const currentVal = (progress * (end - start) + start);
+                obj.innerHTML = currentVal.toFixed(1);
+                if (progress < 1) window.requestAnimationFrame(step);
+                else obj.innerHTML = end.toFixed(1);
+            };
+            window.requestAnimationFrame(step);
+        }
+
+        // --- Logic ---
+        function changeMode(newMode) {
+            if (state.mode === newMode) return;
+            playSound('click');
+            state.mode = newMode;
+            document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active'));
+            if (newMode === 'random') document.getElementById('btnRandom').classList.add('active');
+            else document.getElementById('btnKing').classList.add('active');
+            initGame();
+        }
+
+        async function fetchMovie() {
+            try {
+                const page = Math.floor(Math.random() * 50) + 1;
+                const res = await fetch(`https://api.themoviedb.org/3/movie/popular?api_key=${API_KEY}&language=en-US&page=${page}`);
+                const data = await res.json();
+                const valid = data.results.filter(m => m.vote_count > 500 && m.backdrop_path && m.vote_average > 0);
+                if (valid.length === 0) return fetchMovie();
+                return valid[Math.floor(Math.random() * valid.length)];
+            } catch (e) { return null; }
+        }
+
+        async function initGame() {
+            const overlay = document.getElementById('overlay');
+            const btn = document.getElementById('btnRestart');
+            
+            state.score = 0;
+            state.streak = 0;
+            updateUI();
+            
+            document.getElementById('overlayText').innerText = 'Loading Movies...';
+            btn.style.display = 'none';
+            overlay.classList.remove('hidden');
+
+            await loadNewRound(true);
+            
+            overlay.classList.add('hidden');
+        }
+
+        function updateUI() {
+            document.getElementById('score').innerText = state.score;
+            document.getElementById('bestScore').innerText = state.bestScore;
+            
+            // Fire Mode
+            const scoreBox = document.getElementById('scoreBox');
+            if(state.streak >= 3) scoreBox.classList.add('on-fire');
+            else scoreBox.classList.remove('on-fire');
+        }
+
+        async function loadNewRound(isFirstRound = false) {
+            state.locked = true;
+            resetCardStyles('Left');
+            resetCardStyles('Right');
+
+            if (state.mode === 'random' || isFirstRound) {
+                let m1 = await fetchMovie();
+                let m2 = await fetchMovie();
+                while (!m1 || !m2 || m1.id === m2.id) {
+                    m2 = await fetchMovie();
+                    if (!m1) m1 = await fetchMovie();
+                }
+                state.leftItem = m1;
+                state.rightItem = m2;
+            } else {
+                let m2 = await fetchMovie();
+                while (!m2 || m2.id === state.leftItem.id) {
+                    m2 = await fetchMovie();
+                }
+                state.rightItem = m2;
+            }
+
+            renderCards();
+            state.locked = false;
+        }
+
+        function renderCards() {
+            const showLeft = state.mode === 'king' && state.score > 0;
+            updateCard('Left', state.leftItem, showLeft);
+            updateCard('Right', state.rightItem, false);
+        }
+
+        function updateCard(side, item, showRating) {
+            const bg = document.getElementById(`bg${side}`);
+            const title = document.getElementById(`title${side}`);
+            const year = document.getElementById(`year${side}`);
+            const rate = document.getElementById(`rate${side}`);
+
+            bg.style.backgroundImage = `url('https://image.tmdb.org/t/p/original${item.backdrop_path}')`;
+            title.innerText = item.title;
+            year.innerText = (item.release_date || 'N/A').split('-')[0];
+            
+            title.classList.remove('visible');
+            void title.offsetWidth; 
+            setTimeout(() => title.classList.add('visible'), 50);
+
+            if (showRating) rate.innerText = item.vote_average.toFixed(1);
+            else rate.innerText = '?';
+        }
+
+        function resetCardStyles(side) {
+            const card = document.getElementById(`card${side}`);
+            card.className = 'card';
+        }
+
+        function handleChoice(choice) {
+            if (state.locked) return;
+            state.locked = true;
+
+            const leftRate = state.leftItem.vote_average;
+            const rightRate = state.rightItem.vote_average;
+            const leftStart = (state.mode === 'king' && state.score > 0) ? leftRate : 0;
+            
+            animateValue(document.getElementById('rateLeft'), leftStart, leftRate, 800);
+            animateValue(document.getElementById('rateRight'), 0, rightRate, 800);
+
+            const userWon = (choice === 'left' && leftRate >= rightRate) || 
+                            (choice === 'right' && rightRate >= leftRate);
+
+            const leftCard = document.getElementById('cardLeft');
+            const rightCard = document.getElementById('cardRight');
+
+            setTimeout(() => {
+                if (leftRate >= rightRate) {
+                    leftCard.classList.add('winner');
+                    rightCard.classList.add('loser');
+                } else {
+                    rightCard.classList.add('winner');
+                    leftCard.classList.add('loser');
+                }
+
+                if (userWon) {
+                    state.score++;
+                    state.streak++;
+                    playSound('win');
+                    vibrate(50); // Short vibe
+                    updateUI();
+                    
+                    document.getElementById(`card${choice === 'left' ? 'Left' : 'Right'}`).classList.add('pulse-anim');
+
+                    if (state.mode === 'king') {
+                        if (rightRate > leftRate) state.leftItem = state.rightItem;
+                    }
+                    setTimeout(() => loadNewRound(false), 2000);
+                } else {
+                    playSound('lose');
+                    vibrate([100, 50, 100]); // Long vibe
+                    setTimeout(gameOver, 1500);
+                }
+            }, 600);
+        }
+
+        function gameOver() {
+            const overlay = document.getElementById('overlay');
+            const txt = document.getElementById('overlayText');
+            const btn = document.getElementById('btnRestart');
+            
+            // High Score Check
+            let msg = `GAME OVER<br><span style="font-size:0.6em">Score: ${state.score}</span>`;
+            
+            if (state.score > state.bestScore) {
+                state.bestScore = state.score;
+                localStorage.setItem('movie_best', state.bestScore);
+                msg = `🏆 NEW RECORD!<br><span style="font-size:0.6em">Score: ${state.score}</span>`;
+                confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+                playSound('win');
+            }
+
+            txt.innerHTML = msg;
+            btn.style.display = 'inline-block';
+            overlay.classList.remove('hidden');
+        }
+
+        window.onload = initGame;
+    </script>
+</body>
+</html>
